@@ -36,6 +36,8 @@ def MapBuildDir(list):
 AnalyticsEnv.Prepend(LIBS=['cpuinfo',
         'ds',
         'io',
+        'ssl',
+        'crypto',
         'sandesh',
         'httpc',
         'http',
