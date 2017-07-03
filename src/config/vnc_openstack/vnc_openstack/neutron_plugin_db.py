@@ -253,6 +253,25 @@ class DBInterface(object):
             request.body, {'Content-type': request.environ['CONTENT_TYPE']})
     #end _relay_request
 
+    # Is user_visible
+    def _is_user_visible(self, obj):
+        return obj._id_perms.user_visible
+    #end _is_user_visible
+
+    # Is multi_tenancy
+    def _is_multi_tenancy(self):
+        return self._manager._multi_tenancy
+    #end _is_user_visible
+
+    def _filter_user_visible(self, objs, is_admin=True):
+        objs_filter = objs
+        if not is_admin and self._is_multi_tenancy():
+            objs_filter = []
+            for obj in objs:
+                objs_filter.append(obj) if self._is_user_visible(obj) else None
+        return objs_filter
+    #end _is_user_visible
+
     def _validate_project_ids(self, context=None, filters=None):
         if context and not context['is_admin']:
             return [str(uuid.UUID(context['tenant']))]
@@ -471,11 +490,15 @@ class DBInterface(object):
         return obj_uuid
     #end _resource_create
 
-    def _virtual_network_read(self, net_id=None, fq_name=None, fields=None):
+    def _virtual_network_read(self, net_id=None, fq_name=None, fields=None,
+            is_admin=True):
         net_obj = self._vnc_lib.virtual_network_read(id=net_id,
                                                      fq_name=fq_name,
                                                      fields=fields)
-        return net_obj
+        net_obj = self._filter_user_visible([net_obj], is_admin=is_admin)
+        if not net_obj:
+            raise vnc_exc.NoIdError(net_id)
+        return net_obj[0]
     #end _virtual_network_read
 
     def _virtual_network_update(self, net_obj):
@@ -488,8 +511,8 @@ class DBInterface(object):
 
     def _virtual_network_list(self, parent_id=None, obj_uuids=None,
                               fields=None, detail=False, count=False,
-                              filters=None):
-        return self._vnc_lib.virtual_networks_list(
+                              filters=None, is_admin=True):
+        vns = self._vnc_lib.virtual_networks_list(
                                               parent_id=parent_id,
                                               obj_uuids=obj_uuids,
                                               fields=fields,
@@ -497,6 +520,7 @@ class DBInterface(object):
                                               count=count,
                                               filters=filters,
                                               shared=True)
+        return self._filter_user_visible(vns, is_admin)
     #end _virtual_network_list
 
     def _virtual_machine_interface_read(self, port_id=None, fq_name=None,
@@ -519,7 +543,8 @@ class DBInterface(object):
     #end _virtual_machine_interface_delete
 
     def _virtual_machine_interface_list(self, parent_id=None, back_ref_id=None,
-                                        obj_uuids=None, fields=None):
+                                        obj_uuids=None, fields=None,
+                                        is_admin=True):
         back_ref_fields = ['logical_router_back_refs', 'instance_ip_back_refs', 'floating_ip_back_refs']
         if fields:
             n_extra_fields = list(set(fields + back_ref_fields))
@@ -531,7 +556,7 @@ class DBInterface(object):
                                                      obj_uuids=obj_uuids,
                                                      detail=True,
                                                      fields=n_extra_fields)
-        return vmi_objs
+        return self._filter_user_visible(vmi_objs, is_admin)
     #end _virtual_machine_interface_list
 
     def _instance_ip_create(self, iip_obj):
@@ -612,7 +637,8 @@ class DBInterface(object):
     #end _project_list_domain
 
     # find network ids on a given project
-    def _network_list_project(self, project_id, count=False, filters=None):
+    def _network_list_project(self, project_id, count=False, filters=None,
+            is_admin=True):
         if project_id:
             try:
                 project_uuid = str(uuid.UUID(project_id))
@@ -623,10 +649,12 @@ class DBInterface(object):
 
         if count:
             ret_val = self._virtual_network_list(parent_id=project_uuid,
-                                                 count=True, filters=filters)
+                                                 count=True, filters=filters,
+                                                 is_admin=is_admin)
         else:
             ret_val = self._virtual_network_list(parent_id=project_uuid,
-                                                 detail=True, filters=filters)
+                                                 detail=True, filters=filters,
+                                                 is_admin=is_admin)
 
         return ret_val
     #end _network_list_project
@@ -758,14 +786,16 @@ class DBInterface(object):
         return project_obj.get_floating_ip_pool_refs()
     #end _fip_pool_refs_project
 
-    def _network_list_filter(self, shared=None, router_external=None):
+    def _network_list_filter(self, shared=None, router_external=None,
+            is_admin=True):
         filters = {}
         if shared is not None:
             filters['is_shared'] = shared
         if router_external is not None:
             filters['router_external'] = router_external
 
-        net_list = self._network_list_project(project_id=None, filters=filters)
+        net_list = self._network_list_project(project_id=None, filters=filters,
+                is_admin=is_admin)
         return net_list
     # end _network_list_filter
 
@@ -929,8 +959,8 @@ class DBInterface(object):
         return True
     #end _filters_is_present
 
-    def _network_read(self, net_uuid):
-        net_obj = self._virtual_network_read(net_id=net_uuid)
+    def _network_read(self, net_uuid, is_admin=True):
+        net_obj = self._virtual_network_read(net_id=net_uuid, is_admin=is_admin)
         return net_obj
     # end _network_read
 
@@ -2811,8 +2841,8 @@ class DBInterface(object):
         #    return {'id': net_uuid, 'tenant_id': tenant_id}
 
         try:
-            net_obj = self._network_read(net_uuid)
-        except NoIdError:
+            net_obj = self._network_read(net_uuid, is_admin=context['is_admin'])
+        except vnc_exc.NoIdError:
             self._raise_contrail_exception('NetworkNotFound', net_id=net_uuid)
 
         return self._network_vnc_to_neutron(net_obj, net_repr='SHOW',
@@ -2894,11 +2924,14 @@ class DBInterface(object):
             if filters and 'id' in filters:
                 _collect_without_prune(filters['id'])
             elif filters and 'name' in filters:
-                net_objs = self._network_list_project(context['tenant'])
+                net_objs = self._network_list_project(context['tenant'],
+                    is_admin=context['is_admin'])
                 all_net_objs.extend(net_objs)
-                all_net_objs.extend(self._network_list_filter(shared=True))
+                all_net_objs.extend(self._network_list_filter(shared=True,
+                    is_admin=context['is_admin']))
                 all_net_objs.extend(self._network_list_filter(
-                                    router_external=True))
+                                    router_external=True,
+                                    is_admin=context['is_admin']))
             elif filters and 'shared' in filters or 'router:external' in filters:
                 shared = None
                 router_external = None
@@ -2907,14 +2940,18 @@ class DBInterface(object):
                 if 'shared' in filters:
                     shared = filters['shared'][0]
                 all_net_objs.extend(self._network_list_filter(
-                                    shared, router_external))
+                                    shared, router_external,
+                                    is_admin=context['is_admin']))
             else:
                 project_uuid = str(uuid.UUID(context['tenant']))
                 if not filters:
                     all_net_objs.extend(self._network_list_filter(
-                                 router_external=True))
-                    all_net_objs.extend(self._network_list_filter(shared=True))
-                all_net_objs.extend(self._network_list_project(project_uuid))
+                                 router_external=True,
+                                 is_admin=context['is_admin']))
+                    all_net_objs.extend(self._network_list_filter(shared=True,
+                        is_admin=context['is_admin']))
+                all_net_objs.extend(self._network_list_project(project_uuid,
+                    is_admin=context['is_admin']))
         # admin role from here on
         elif filters and 'tenant_id' in filters:
             # project-id is present
@@ -2926,16 +2963,19 @@ class DBInterface(object):
             else:
                 # read all networks in project, and prune below
                 for p_id in self._validate_project_ids(context, filters) or []:
-                    all_net_objs.extend(self._network_list_project(p_id))
+                    all_net_objs.extend(self._network_list_project(p_id,
+                        is_admin=context['is_admin']))
                 if 'router:external' in filters:
                     all_net_objs.extend(self._network_list_filter(
-                                 router_external=filters['router:external'][0]))
+                                 router_external=filters['router:external'][0],
+                                 is_admin=context['is_admin']))
         elif filters and 'id' in filters:
             # required networks are specified, just read and populate ret_dict
             # prune is skipped because all_net_objs is empty
             _collect_without_prune(filters['id'])
         elif filters and 'name' in filters:
-            net_objs = self._network_list_project(None)
+            net_objs = self._network_list_project(None,
+                    is_admin=context['is_admin'])
             all_net_objs.extend(net_objs)
         elif filters and 'shared' in filters or 'router:external' in filters:
             shared = None
@@ -2944,7 +2984,8 @@ class DBInterface(object):
                 router_external = filters['router:external'][0]
             if 'shared' in filters:
                 shared = filters['shared'][0]
-            nets = self._network_list_filter(shared, router_external)
+            nets = self._network_list_filter(shared, router_external,
+                    is_admin=context['is_admin'])
             for net in nets:
                 net_info = self._network_vnc_to_neutron(net,
                                                         net_repr='LIST',
@@ -3263,9 +3304,11 @@ class DBInterface(object):
                 proj_id = context['tenant']
             else:
                 proj_id = None
-            net_objs = self._network_list_project(proj_id)
+            net_objs = self._network_list_project(proj_id,
+                    is_admin=context['is_admin'])
             all_net_objs.extend(net_objs)
-            net_objs = self._network_list_filter(shared=True)
+            net_objs = self._network_list_filter(shared=True,
+                    is_admin=context['is_admin'])
             all_net_objs.extend(net_objs)
 
         ret_dict = {}
@@ -4330,7 +4373,7 @@ class DBInterface(object):
             founded_device_ids = set()
             for vmi_obj in self._virtual_machine_interface_list(
                     obj_uuids=filters.get('id'),
-                    back_ref_id=back_ref_ids):
+                    back_ref_id=back_ref_ids, is_admin=context['is_admin']):
                 for device_ref in (vmi_obj.get_virtual_machine_refs() or []) +\
                         (vmi_obj.get_logical_router_back_refs() or []):
                     # check if the device-id matches and if the network-id
@@ -4368,7 +4411,8 @@ class DBInterface(object):
                 # Add all router intefraces on private networks
                 if router_port_ids:
                     port_objs.extend(self._virtual_machine_interface_list(
-                        obj_uuids=router_port_ids, parent_id=project_ids))
+                        obj_uuids=router_port_ids, parent_id=project_ids,
+                        is_admin=context['is_admin']))
 
                 # Add router gateway interface
                 for router in router_objs:
@@ -4386,11 +4430,12 @@ class DBInterface(object):
         elif filters.get('network_id'):
             port_objs = self._virtual_machine_interface_list(
                 obj_uuids=filters.get('id'),
-                back_ref_id=filters.get('network_id'))
+                back_ref_id=filters.get('network_id'),
+                is_admin=context['is_admin'])
         else:
             port_objs = self._virtual_machine_interface_list(
                 obj_uuids=filters.get('id'),
-                parent_id=project_ids)
+                parent_id=project_ids, is_admin=context['is_admin'])
 
         neutron_ports = self._port_list(port_objs)
 
