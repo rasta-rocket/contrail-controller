@@ -155,7 +155,7 @@ class NeutronPluginInterface(object):
 
         try:
             cfgdb = self._get_user_cfgdb(context)
-            net_info = cfgdb.network_read(network['id'], fields)
+            net_info = cfgdb.network_read(network['id'], fields, context)
             return net_info
         except Exception as e:
             cgitb_hook(format="text")
