@@ -234,7 +234,12 @@ class SchemaTransformer(object):
         sg_id_list = [sg.uuid for sg in sg_list]
         sg_acl_dict = {}
         vn_acl_dict = {}
+        i = 0
         for acl in DBBaseST.list_vnc_obj('access_control_list', fields=['access_control_list_hash']):
+            if i % 100 == 0:
+                gevent.sleep(0.001)
+            i += 1
+
             delete = False
             if acl.parent_type == 'virtual-network':
                 if acl.parent_uuid in vn_id_list:
