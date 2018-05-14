@@ -708,16 +708,11 @@ class DBInterface(object):
 
     def _security_group_list_project(self, project_id, filters=None):
         if project_id:
-            try:
-                project_uuid = str(uuid.UUID(project_id))
-                # Trigger a project read to ensure project sync
-                project_obj = self._project_read(proj_id=project_uuid)
-            except vnc_exc.NoIdError:
-                return []
+            project_uuid = str(uuid.UUID(project_id))
         else:
             project_uuid = None
 
-        obj_uuids=None
+        obj_uuids = None
         if filters and 'id' in filters:
             obj_uuids = filters['id']
         sg_objs = self._vnc_lib.security_groups_list(parent_id=project_uuid,
@@ -4590,15 +4585,12 @@ class DBInterface(object):
         ret_list = []
         memo_req = {}
 
-        # collect phase
-        self._ensure_default_security_group_exists(context['tenant_id'])
-
         if filters and 'id' in filters:
             all_sgs = self._vnc_lib.security_groups_list(
                 obj_uuids=filters['id'], detail=True)
         elif context and not context['is_admin']:
-            all_sgs = self._security_group_list_project(
-                str(uuid.UUID(context['tenant'])), filters)
+            all_sgs = self._security_group_list_project(context['tenant'],
+                                                        filters)
         else:  # admin context
             if filters and 'tenant_id' in filters:
                 all_sgs = []
