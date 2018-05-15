@@ -3678,7 +3678,7 @@ class DBInterface(object):
                     if 'router:external' in filters:
                         all_rtrs.append(self._fip_pool_ref_routers(p_id))
                     else:
-                        project_rtrs = self._router_list_project(p_id)
+                        project_rtrs = self._router_list_project(p_id, detail=True)
                         all_rtrs.append(project_rtrs)
         elif filters and 'id' in filters:
             # required routers are specified, just read and populate ret_list
@@ -3698,25 +3698,18 @@ class DBInterface(object):
                 project_id = None
 
             # read all routers in specified projects
-            project_rtrs = self._router_list_project(project_id=project_id)
+            project_rtrs = self._router_list_project(project_id=project_id, detail=True)
             all_rtrs.append(project_rtrs)
 
         # prune phase
         for project_rtrs in all_rtrs:
-            for proj_rtr in project_rtrs:
-                proj_rtr_id = proj_rtr['uuid']
-                if not self._filters_is_present(filters, 'id', proj_rtr_id):
+            for rtr_obj in project_rtrs:
+                if not self._filters_is_present(filters, 'id', rtr_obj.uuid):
                     continue
-
-                proj_rtr_fq_name = unicode(proj_rtr['fq_name'])
-                if not self._filters_is_present(filters, 'contrail:fq_name',
-                                                proj_rtr_fq_name):
+                if not self._filters_is_present(filters, 'contrail:fq_name', rtr_obj.fq_name):
                     continue
                 try:
-                    rtr_obj = self._logical_router_read(proj_rtr['uuid'])
-                    if not self._filters_is_present(
-                        filters, 'name',
-                        rtr_obj.get_display_name() or rtr_obj.name):
+                    if not self._filters_is_present(filters, 'name', rtr_obj.get_display_name() or rtr_obj.name):
                         continue
                     rtr_info = self._router_vnc_to_neutron(rtr_obj,
                                                            rtr_repr='LIST')
