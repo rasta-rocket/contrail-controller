@@ -15,6 +15,7 @@ import netaddr
 from netaddr import IPNetwork, IPSet, IPAddress
 import gevent
 import bottle
+import time
 
 from neutron.common import constants
 
@@ -77,6 +78,7 @@ class LocalVncApi(VncApi):
         #   api_server_obj methods directly instead of system call.
         # Always pass contextual user_token aka mux connection to api-server
         try:
+            time_start = time.time()
             user_token = get_context().user_token
             if 'X-AUTH-TOKEN' in self._headers:
                 # retain/restore if there was already a token on channel
@@ -87,10 +89,14 @@ class LocalVncApi(VncApi):
                 had_user_token = False
 
             url_parts = url.split('/')
+            req = get_context().request
+            req_context = req.json['context']
+            req_id = get_context().request_id
             self.api_server_obj.config_log(
-                         "neutron request %s id %s needs %s permission on %s"
-                        %(get_context().request, get_context().request_id,
-                          operations[op], url_parts[1]), level=SandeshLevel.SYS_INFO)
+                "neutron request [%s %s %s] %s %s needs %s permission on %s" %
+                (req_id, req_context['tenant_id'], req_context['user_id'],
+                 req_context['operation'], req_context['type'], operations[op], url_parts[1]),
+                level=SandeshLevel.SYS_DEBUG)
             if (url_parts[1]+'-'+oper[op]) not in self.api_server_routes:
                 return super(LocalVncApi, self)._request(
                     op, url, data, *args, **kwargs)
@@ -170,6 +176,17 @@ class LocalVncApi(VncApi):
                         self.deepcopy_ref(ret_item, item_key)
             except KeyError:
                 pass
+
+            time_finish = time.time()
+            q = url
+            if op == rest.OP_GET:
+                q = "%s?%s" % (q, environ.get('QUERY_STRING'))
+            self.api_server_obj.config_log(
+                "neutron request [%s %s %s] %s %s %s %s %0.6f" %
+                (req_id, req_context['tenant_id'], req_context['user_id'], req_context['operation'],
+                 req_context['type'], oper[op], q, (time_finish - time_start)),
+                level=SandeshLevel.SYS_INFO)
+
             if op == rest.OP_GET:
                 return ret_val
             else:
@@ -1455,7 +1472,7 @@ class DBInterface(object):
                     return True
         return False
     #end _shared_with_tenant
- 
+
     def _network_vnc_to_neutron(self, net_obj, net_repr='SHOW', context=None):
         net_q_dict = {}
         extra_dict = {}
@@ -4219,7 +4236,7 @@ class DBInterface(object):
                     self._raise_contrail_exception('BadRequest',
                                                    resource='port',
                                                    msg=err_msg_str)
-       
+
         # TODO below reads back default parent name, fix it
         port_obj = self._virtual_machine_interface_read(port_id=port_id)
         ret_port_q = self._port_vnc_to_neutron(port_obj)
