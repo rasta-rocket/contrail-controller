@@ -1,7 +1,6 @@
 import socket
 import gevent
 import cStringIO
-from pprint import pformat
 
 from cfgm_common.utils import cgitb_hook
 from cfgm_common.exceptions import NoIdError
@@ -69,7 +68,7 @@ class VncAmqpHandle(object):
         pass
 
     def vnc_subscribe_actions(self):
-        msg = "Notification Message: %s" % (pformat(self.oper_info))
+        msg = "Notification Message: %s" % self.oper_info
         self.logger.debug(msg)
 
         self.obj = None

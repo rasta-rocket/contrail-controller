@@ -13,7 +13,6 @@ import gevent
 import gevent.event
 
 import time
-from pprint import pformat
 
 import socket
 from netaddr import IPNetwork, IPAddress
@@ -319,7 +318,7 @@ class VncServerKombuClient(VncKombuClient):
     def _dbe_subscribe_callback(self, oper_info):
         self._db_client_mgr.wait_for_resync_done()
         try:
-            msg = "Notification Message: %s" %(pformat(oper_info))
+            msg = "Notification Message: %s" % oper_info
             self.config_log(msg, level=SandeshLevel.SYS_DEBUG)
             trace = self._generate_msgbus_notify_trace(oper_info)
 
