@@ -825,7 +825,8 @@ class AddrMgmt(object):
                     _DEFAULT_ZK_COUNTER_PATH_PREFIX + proj_dict['uuid'])
             path = path_prefix + "/" + obj_type
             quota_counter = self._server_mgr.quota_counter
-            return (True, (subnet_count, quota_counter[path]))
+            if path in quota_counter:
+                return (True, (subnet_count, quota_counter[path]))
         return (True, (0, ""))
     # end get_subnet_quota_counter
 
