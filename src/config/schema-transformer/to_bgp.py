@@ -264,12 +264,16 @@ class SchemaTransformer(object):
         # end for acl
 
         gevent.sleep(0.001)
+        start_time = time.time()
         for sg in sg_list:
             try:
                 SecurityGroupST.locate(sg.get_fq_name_str(), sg, sg_acl_dict)
             except Exception as e:
                 self.logger.error("Error in reinit security-group %s: %s" % (
                     sg.get_fq_name_str(), str(e)))
+        elapsed_time = time.time() - start_time
+        self.logger.info("Initialized %s in %.3f" %
+			(SecurityGroupST.obj_type, elapsed_time))
 
         # update sg rules after all SG objects are initialized to avoid
         # rewriting of ACLs multiple times
@@ -282,6 +286,8 @@ class SchemaTransformer(object):
 
         gevent.sleep(0.001)
         RouteTargetST.reinit()
+
+        start_time = time.time()
         for vn in vn_list:
             if vn.uuid in ri_deleted:
                 vn_ri_list = vn.get_routing_instances() or []
@@ -293,19 +299,33 @@ class SchemaTransformer(object):
             except Exception as e:
                 self.logger.error("Error in reinit virtual network %s: %s" % (
                     vn.get_fq_name_str(), str(e)))
+        elapsed_time = time.time() - start_time
+        self.logger.info("Initialized %s in %.3f" %
+			(VirtualNetworkST.obj_type, elapsed_time))
+
+        start_time = time.time()
         for ri_name, ri_obj in ri_dict.items():
             try:
                 RoutingInstanceST.locate(ri_name, ri_obj)
             except Exception as e:
                 self.logger.error("Error in reinit routing instance %s: %s" % (
                     ri_name, str(e)))
+        elapsed_time = time.time() - start_time
+        self.logger.info("Initialized primary %s in %.3f" %
+			(RoutingInstanceST.obj_type, elapsed_time))
+
         # Initialize service instance RI's after Primary RI's
+        start_time = time.time()
         for si_ri_name, si_ri_obj in service_ri_dict.items():
             try:
                 RoutingInstanceST.locate(si_ri_name, si_ri_obj)
             except Exception as e:
                 self.logger.error("Error in reinit routing instance %s: %s" % (
                     si_ri_name, str(e)))
+
+        elapsed_time = time.time() - start_time
+        self.logger.info("Initialized SI %s in %.3f" %
+			(RoutingInstanceST.obj_type, elapsed_time))
 
         NetworkPolicyST.reinit()
         gevent.sleep(0.001)
@@ -319,6 +339,8 @@ class SchemaTransformer(object):
         AliasIpST.reinit()
 
         gevent.sleep(0.001)
+
+        start_time = time.time()
         for si in ServiceInstanceST.list_vnc_obj():
             try:
                 si_st = ServiceInstanceST.locate(si.get_fq_name_str(), si)
@@ -335,6 +357,9 @@ class SchemaTransformer(object):
             except Exception as e:
                 self.logger.error("Error in reinit service instance %s: %s" % (
                     si.get_fq_name_str(), str(e)))
+        elapsed_time = time.time() - start_time
+        self.logger.info("Initialized %s in %.3f" %
+			(ServiceInstanceST.obj_type, elapsed_time))
 
         gevent.sleep(0.001)
         RoutingPolicyST.reinit()
